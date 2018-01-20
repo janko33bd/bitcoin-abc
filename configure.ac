@@ -14,11 +14,11 @@ AC_CONFIG_HEADERS([src/config/bitcoin-config.h])
 AC_CONFIG_AUX_DIR([build-aux])
 AC_CONFIG_MACRO_DIR([build-aux/m4])
 
-BITCOIN_DAEMON_NAME=bitcoind
-BITCOIN_GUI_NAME=bitcoin-qt
-BITCOIN_CLI_NAME=bitcoin-cli
-BITCOIN_TX_NAME=bitcoin-tx
-BITCOIN_SEEDER_NAME=bitcoin-seeder
+BITCOIN_DAEMON_NAME=lored
+BITCOIN_GUI_NAME=lore-qt
+BITCOIN_CLI_NAME=lore-cli
+BITCOIN_TX_NAME=lore-tx
+BITCOIN_SEEDER_NAME=blackcoin-seeder
 
 AC_CANONICAL_HOST
 
@@ -446,9 +446,9 @@ case $host in
          dnl add default macports paths
          CPPFLAGS="$CPPFLAGS -isystem /opt/local/include"
          LIBS="$LIBS -L/opt/local/lib"
-         if test -d /opt/local/include/db48; then
-           CPPFLAGS="$CPPFLAGS -I/opt/local/include/db48"
-           LIBS="$LIBS -L/opt/local/lib/db48"
+         if test -d /opt/local/include/db62; then
+           CPPFLAGS="$CPPFLAGS -I/opt/local/include/db62"
+           LIBS="$LIBS -L/opt/local/lib/db62"
          fi
        fi
 
@@ -751,7 +751,7 @@ AC_SUBST(LIBMEMENV)
 
 if test x$enable_wallet != xno; then
     dnl Check for libdb_cxx only if wallet enabled
-    BITCOIN_FIND_BDB48
+    BITCOIN_FIND_BDB62
 fi
 
 dnl Check for libminiupnpc (optional)

@@ -12,6 +12,7 @@
 #include "script/script_error.h"
 #include "script/sighashtype.h"
 #include "script/sign.h"
+#include "test/jsonutil.h"
 #include "test/scriptflags.h"
 #include "test/sigutil.h"
 #include "test/test_bitcoin.h"
@@ -35,16 +36,6 @@
 // #define UPDATE_JSON_TESTS
 
 static const unsigned int flags = SCRIPT_VERIFY_P2SH | SCRIPT_VERIFY_STRICTENC;
-
-UniValue read_json(const std::string &jsondata) {
-    UniValue v;
-
-    if (!v.read(jsondata) || !v.isArray()) {
-        BOOST_ERROR("Parse error.");
-        return UniValue(UniValue::VARR);
-    }
-    return v.get_array();
-}
 
 struct ScriptErrorDesc {
     ScriptError_t err;
@@ -88,8 +79,6 @@ static ScriptErrorDesc script_errors[] = {
     {SCRIPT_ERR_MINIMALIF, "MINIMALIF"},
     {SCRIPT_ERR_SIG_NULLFAIL, "NULLFAIL"},
     {SCRIPT_ERR_DISCOURAGE_UPGRADABLE_NOPS, "DISCOURAGE_UPGRADABLE_NOPS"},
-    {SCRIPT_ERR_DISCOURAGE_UPGRADABLE_WITNESS_PROGRAM,
-     "DISCOURAGE_UPGRADABLE_WITNESS_PROGRAM"},
     {SCRIPT_ERR_NONCOMPRESSED_PUBKEY, "NONCOMPRESSED_PUBKEY"},
     {SCRIPT_ERR_DIV_BY_ZERO, "DIV_BY_ZERO"},
     {SCRIPT_ERR_MOD_BY_ZERO, "MOD_BY_ZERO"},
@@ -127,7 +116,7 @@ BuildCreditingTransaction(const CScript &scriptPubKey, const Amount nValue) {
     txCredit.nLockTime = 0;
     txCredit.vin.resize(1);
     txCredit.vout.resize(1);
-    txCredit.vin[0].prevout.SetNull();
+    txCredit.vin[0].prevout = COutPoint();
     txCredit.vin[0].scriptSig = CScript() << CScriptNum(0) << CScriptNum(0);
     txCredit.vin[0].nSequence = CTxIn::SEQUENCE_FINAL;
     txCredit.vout[0].scriptPubKey = scriptPubKey;
@@ -144,8 +133,7 @@ BuildSpendingTransaction(const CScript &scriptSig,
     txSpend.nLockTime = 0;
     txSpend.vin.resize(1);
     txSpend.vout.resize(1);
-    txSpend.vin[0].prevout.hash = txCredit.GetId();
-    txSpend.vin[0].prevout.n = 0;
+    txSpend.vin[0].prevout = COutPoint(txCredit.GetId(), 0);
     txSpend.vin[0].scriptSig = scriptSig;
     txSpend.vin[0].nSequence = CTxIn::SEQUENCE_FINAL;
     txSpend.vout[0].scriptPubKey = CScript();
@@ -883,6 +871,42 @@ BOOST_AUTO_TEST_CASE(script_build) {
                     "P2PK with undefined hashtype", SCRIPT_VERIFY_STRICTENC)
             .PushSig(keys.key1, SigHashType(5))
             .ScriptError(SCRIPT_ERR_SIG_HASHTYPE));
+
+    // Generate P2PKH tests for invalid SigHashType
+    tests.push_back(
+        TestBuilder(CScript() << OP_DUP << OP_HASH160
+                              << ToByteVector(keys.pubkey0.GetID())
+                              << OP_EQUALVERIFY << OP_CHECKSIG,
+                    "P2PKH with invalid sighashtype", 0)
+            .PushSig(keys.key0, SigHashType(0x21), 32, 32, Amount(0), 0)
+            .Push(keys.pubkey0));
+    tests.push_back(TestBuilder(CScript() << OP_DUP << OP_HASH160
+                                          << ToByteVector(keys.pubkey0.GetID())
+                                          << OP_EQUALVERIFY << OP_CHECKSIG,
+                                "P2PKH with invalid sighashtype and STRICTENC",
+                                SCRIPT_VERIFY_STRICTENC)
+                        .PushSig(keys.key0, SigHashType(0x21), 32, 32,
+                                 Amount(0), SCRIPT_VERIFY_STRICTENC)
+                        .Push(keys.pubkey0)
+                        // Should fail for STRICTENC
+                        .ScriptError(SCRIPT_ERR_SIG_HASHTYPE));
+
+    // Generate P2SH tests for invalid SigHashType
+    tests.push_back(
+        TestBuilder(CScript() << ToByteVector(keys.pubkey1) << OP_CHECKSIG,
+                    "P2SH(P2PK) with invalid sighashtype", SCRIPT_VERIFY_P2SH,
+                    true)
+            .PushSig(keys.key1, SigHashType(0x21))
+            .PushRedeem());
+    tests.push_back(
+        TestBuilder(CScript() << ToByteVector(keys.pubkey1) << OP_CHECKSIG,
+                    "P2SH(P2PK) with invalid sighashtype and STRICTENC",
+                    SCRIPT_VERIFY_P2SH | SCRIPT_VERIFY_STRICTENC, true)
+            .PushSig(keys.key1, SigHashType(0x21))
+            .PushRedeem()
+            // Should fail for STRICTENC
+            .ScriptError(SCRIPT_ERR_SIG_HASHTYPE));
+
     tests.push_back(
         TestBuilder(
             CScript() << ToByteVector(keys.pubkey1) << OP_CHECKSIG << OP_NOT,
@@ -1122,14 +1146,22 @@ BOOST_AUTO_TEST_CASE(script_json_test) {
         }
 
         std::string scriptSigString = test[pos++].get_str();
-        CScript scriptSig = ParseScript(scriptSigString);
         std::string scriptPubKeyString = test[pos++].get_str();
-        CScript scriptPubKey = ParseScript(scriptPubKeyString);
-        unsigned int scriptflags = ParseScriptFlags(test[pos++].get_str());
-        int scriptError = ParseScriptError(test[pos++].get_str());
+        try {
+            CScript scriptSig = ParseScript(scriptSigString);
+            CScript scriptPubKey = ParseScript(scriptPubKeyString);
+            unsigned int scriptflags = ParseScriptFlags(test[pos++].get_str());
+            int scriptError = ParseScriptError(test[pos++].get_str());
 
-        DoTest(scriptPubKey, scriptSig, scriptflags, strTest, scriptError,
-               nValue);
+            DoTest(scriptPubKey, scriptSig, scriptflags, strTest, scriptError,
+                   nValue);
+        } catch (std::runtime_error &e) {
+            BOOST_TEST_MESSAGE("Script test failed.  scriptSig:  "
+                               << scriptSigString
+                               << " scriptPubKey: " << scriptPubKeyString);
+            BOOST_TEST_MESSAGE("Exception: " << e.what());
+            throw;
+        }
     }
 }
 

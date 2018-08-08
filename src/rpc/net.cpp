@@ -522,11 +522,11 @@ static UniValue getnetworkinfo(const Config &config,
             "  ],\n"
             "  \"relayfee\": x.xxxxxxxx,                (numeric) minimum "
             "relay fee for non-free transactions in " +
-            CURRENCY_UNIT + "/kB\n"
-                            "  \"incrementalfee\": x.xxxxxxxx,          "
-                            "(numeric) minimum fee increment for mempool "
-                            "limiting or BIP 125 replacement in " +
-            CURRENCY_UNIT + "/kB\n"
+            CURRENCY_UNIT +
+            "/kB\n"
+            "  \"excessutxocharge\": x.xxxxxxxx,        (numeric) minimum "
+            "charge for excess utxos in " +
+            CURRENCY_UNIT + "\n"
                             "  \"localaddresses\": [                    "
                             "(array) list of local addresses\n"
                             "  {\n"
@@ -563,10 +563,10 @@ static UniValue getnetworkinfo(const Config &config,
                  (int)g_connman->GetNodeCount(CConnman::CONNECTIONS_ALL)));
     }
     obj.push_back(Pair("networks", GetNetworksInfo()));
-    obj.push_back(
-        Pair("relayfee", ValueFromAmount(::minRelayTxFee.GetFeePerK())));
-    obj.push_back(Pair("incrementalfee",
-                       ValueFromAmount(::incrementalRelayFee.GetFeePerK())));
+    obj.push_back(Pair("relayfee",
+                       ValueFromAmount(config.GetMinFeePerKB().GetFeePerK())));
+    obj.push_back(Pair("excessutxocharge",
+                       ValueFromAmount(config.GetExcessUTXOCharge())));
     UniValue localAddresses(UniValue::VARR);
     {
         LOCK(cs_mapLocalHost);

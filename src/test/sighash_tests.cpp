@@ -9,6 +9,7 @@
 #include "script/script.h"
 #include "serialize.h"
 #include "streams.h"
+#include "test/jsonutil.h"
 #include "test/test_bitcoin.h"
 #include "util.h"
 #include "utilstrencodings.h"
@@ -20,8 +21,6 @@
 #include <boost/test/unit_test.hpp>
 
 #include <univalue.h>
-
-extern UniValue read_json(const std::string &jsondata);
 
 // Old script.cpp SignatureHash function
 static uint256 SignatureHashOld(CScript scriptCode, const CTransaction &txTo,
@@ -109,8 +108,7 @@ static void RandomTransaction(CMutableTransaction &tx, bool fSingle) {
     for (int in = 0; in < ins; in++) {
         tx.vin.push_back(CTxIn());
         CTxIn &txin = tx.vin.back();
-        txin.prevout.hash = InsecureRand256();
-        txin.prevout.n = InsecureRandBits(2);
+        txin.prevout = COutPoint(InsecureRand256(), InsecureRandBits(2));
         RandomScript(txin.scriptSig);
         txin.nSequence =
             (InsecureRandBool()) ? insecure_rand() : (unsigned int)-1;

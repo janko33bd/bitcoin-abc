@@ -3,6 +3,11 @@
 // Distributed under the MIT software license, see the accompanying
 // file COPYING or http://www.opensource.org/licenses/mit-license.php.
 
+/* 
+ * Stake cache by Qtum
+ * Copyright (c) 2016-2018 The Qtum developers
+ */
+
 #include "pos.h"
 #include "chain.h"
 #include "chainparams.h"
@@ -91,7 +96,7 @@ bool CheckStakeKernelHash(const CBlockIndex* pindexPrev, unsigned int nBits,
     // Calculate hash
     CHashWriter ss(SER_GETHASH, 0);
     ss << nStakeModifier;
-    ss << nBlockFromTime << prevout.hash << prevout.n << nTime;
+    ss << nBlockFromTime << prevout.GetHash() << prevout.GetN() << nTime;
     uint256 hashProofOfStake = ss.GetHash();
 
     // Now check if proof-of-stake hash meets target protocol
@@ -101,7 +106,7 @@ bool CheckStakeKernelHash(const CBlockIndex* pindexPrev, unsigned int nBits,
     if (gArgs.IsArgSet("-debug")) {
         LogPrintf("%s: check modifier=%s nBlockFromTime=%u nPrevout=%u nTime=%u hashProof=%s\n", __func__, 
             nStakeModifier.GetHex().c_str(),
-            nBlockFromTime, prevout.n, nTime,
+            nBlockFromTime, prevout.GetN(), nTime,
             hashProofOfStake.ToString());
     }
 
@@ -130,7 +135,7 @@ bool CheckProofOfStake(CBlockIndex* pindexPrev, const CTransaction& tx, unsigned
     Coin coinPrev;
 
     if (!view.GetCoin(txin.prevout, coinPrev))
-        return state.DoS(100, error("CheckProofOfStake(): Stake prevout does not exist %s", txin.prevout.hash.ToString()));
+        return state.DoS(100, error("CheckProofOfStake(): Stake prevout does not exist %s", txin.prevout.GetHash().ToString()));
 
     if (pindexPrev->nHeight + 1 - coinPrev.nHeight < Params().GetConsensus().nStakeMinConfirmations)
         return state.DoS(100, error("CheckProofOfStake(): Stake prevout is not mature, expecting %i and only matured to %i", Params().GetConsensus().nStakeMinConfirmations, pindexPrev->nHeight + 1 - coinPrev.nHeight));

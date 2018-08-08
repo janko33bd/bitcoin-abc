@@ -548,10 +548,10 @@ static UniValue getblocktemplate(const Config &config,
             BlockMap::iterator mi = mapBlockIndex.find(hash);
             if (mi != mapBlockIndex.end()) {
                 CBlockIndex *pindex = mi->second;
-                if (pindex->IsValid(BLOCK_VALID_SCRIPTS)) {
+                if (pindex->IsValid(BlockValidity::SCRIPTS)) {
                     return "duplicate";
                 }
-                if (pindex->nStatus & BLOCK_FAILED_MASK) {
+                if (pindex->nStatus.isInvalid()) {
                     return "duplicate-invalid";
                 }
                 return "duplicate-inconclusive";
@@ -718,8 +718,9 @@ static UniValue getblocktemplate(const Config &config,
 
         UniValue deps(UniValue::VARR);
         for (const CTxIn &in : tx.vin) {
-            if (setTxIndex.count(in.prevout.hash))
-                deps.push_back(setTxIndex[in.prevout.hash]);
+            if (setTxIndex.count(in.prevout.GetTxId())) {
+                deps.push_back(setTxIndex[in.prevout.GetTxId()]);
+            }
         }
         entry.push_back(Pair("depends", deps));
 
@@ -905,10 +906,10 @@ static UniValue submitblock(const Config &config,
         BlockMap::iterator mi = mapBlockIndex.find(hash);
         if (mi != mapBlockIndex.end()) {
             CBlockIndex *pindex = mi->second;
-            if (pindex->IsValid(BLOCK_VALID_SCRIPTS)) {
+            if (pindex->IsValid(BlockValidity::SCRIPTS)) {
                 return "duplicate";
             }
-            if (pindex->nStatus & BLOCK_FAILED_MASK) {
+            if (pindex->nStatus.isInvalid()) {
                 return "duplicate-invalid";
             }
             // Otherwise, we might only have the header - process the block
@@ -998,8 +999,8 @@ static UniValue checkkernel(const Config &config,
             return result;
 
         UniValue oKernel(UniValue::VOBJ);
-        oKernel.push_back(Pair("txid", kernel.hash.GetHex()));
-        oKernel.push_back(Pair("vout", (int64_t)kernel.n));
+        oKernel.push_back(Pair("txid", kernel.GetHash().GetHex()));
+        oKernel.push_back(Pair("vout", (int64_t)kernel.GetN()));
         oKernel.push_back(Pair("time", nTime));
         result.push_back(Pair("kernel", oKernel));
 
@@ -1074,123 +1075,6 @@ static UniValue estimatefee(const Config &config,
     return ValueFromAmount(feeRate.GetFeePerK());
 }
 
-static UniValue estimatepriority(const Config &config,
-                                 const JSONRPCRequest &request) {
-    if (request.fHelp || request.params.size() != 1) {
-        throw std::runtime_error(
-            "estimatepriority nblocks\n"
-            "\nDEPRECATED. Estimates the approximate priority "
-            "a zero-fee transaction needs to begin\n"
-            "confirmation within nblocks blocks.\n"
-            "\nArguments:\n"
-            "1. nblocks     (numeric, required)\n"
-            "\nResult:\n"
-            "n              (numeric) estimated priority\n"
-            "\n"
-            "A negative value is returned if not enough "
-            "transactions and blocks\n"
-            "have been observed to make an estimate.\n"
-            "\nExample:\n" +
-            HelpExampleCli("estimatepriority", "6"));
-    }
-
-    RPCTypeCheck(request.params, {UniValue::VNUM});
-
-    int nBlocks = request.params[0].get_int();
-    if (nBlocks < 1) {
-        nBlocks = 1;
-    }
-
-    return mempool.estimatePriority(nBlocks);
-}
-
-static UniValue estimatesmartfee(const Config &config,
-                                 const JSONRPCRequest &request) {
-    if (request.fHelp || request.params.size() != 1) {
-        throw std::runtime_error(
-            "estimatesmartfee nblocks\n"
-            "\nWARNING: This interface is unstable and may disappear or "
-            "change!\n"
-            "\nEstimates the approximate fee per kilobyte needed for a "
-            "transaction to begin\n"
-            "confirmation within nblocks blocks if possible and return the "
-            "number of blocks\n"
-            "for which the estimate is valid.\n"
-            "\nArguments:\n"
-            "1. nblocks     (numeric)\n"
-            "\nResult:\n"
-            "{\n"
-            "  \"feerate\" : x.x,     (numeric) estimate fee-per-kilobyte (in "
-            "BCH)\n"
-            "  \"blocks\" : n         (numeric) block number where estimate "
-            "was found\n"
-            "}\n"
-            "\n"
-            "A negative value is returned if not enough transactions and "
-            "blocks\n"
-            "have been observed to make an estimate for any number of blocks.\n"
-            "However it will not return a value below the mempool reject fee.\n"
-            "\nExample:\n" +
-            HelpExampleCli("estimatesmartfee", "6"));
-    }
-
-    RPCTypeCheck(request.params, {UniValue::VNUM});
-
-    int nBlocks = request.params[0].get_int();
-
-    UniValue result(UniValue::VOBJ);
-    int answerFound;
-    CFeeRate feeRate = mempool.estimateSmartFee(nBlocks, &answerFound);
-    result.push_back(Pair("feerate",
-                          feeRate == CFeeRate(Amount(0))
-                              ? -1.0
-                              : ValueFromAmount(feeRate.GetFeePerK())));
-    result.push_back(Pair("blocks", answerFound));
-    return result;
-}
-
-static UniValue estimatesmartpriority(const Config &config,
-                                      const JSONRPCRequest &request) {
-    if (request.fHelp || request.params.size() != 1) {
-        throw std::runtime_error(
-            "estimatesmartpriority nblocks\n"
-            "\nDEPRECATED. WARNING: This interface is unstable and may "
-            "disappear or change!\n"
-            "\nEstimates the approximate priority a zero-fee transaction needs "
-            "to begin\n"
-            "confirmation within nblocks blocks if possible and return the "
-            "number of blocks\n"
-            "for which the estimate is valid.\n"
-            "\nArguments:\n"
-            "1. nblocks     (numeric, required)\n"
-            "\nResult:\n"
-            "{\n"
-            "  \"priority\" : x.x,    (numeric) estimated priority\n"
-            "  \"blocks\" : n         (numeric) block number where estimate "
-            "was found\n"
-            "}\n"
-            "\n"
-            "A negative value is returned if not enough transactions and "
-            "blocks\n"
-            "have been observed to make an estimate for any number of blocks.\n"
-            "However if the mempool reject fee is set it will return 1e9 * "
-            "MAX_MONEY.\n"
-            "\nExample:\n" +
-            HelpExampleCli("estimatesmartpriority", "6"));
-    }
-
-    RPCTypeCheck(request.params, {UniValue::VNUM});
-
-    int nBlocks = request.params[0].get_int();
-
-    UniValue result(UniValue::VOBJ);
-    int answerFound;
-    double priority = mempool.estimateSmartPriority(nBlocks, &answerFound);
-    result.push_back(Pair("priority", priority));
-    result.push_back(Pair("blocks", answerFound));
-    return result;
-}
-
 // clang-format off
 static const CRPCCommand commands[] = {
     //  category   name                     actor (function)       okSafeMode
@@ -1206,9 +1090,6 @@ static const CRPCCommand commands[] = {
     {"generating", "generatetoaddress",     generatetoaddress,     true, {"nblocks", "address", "maxtries"}},
 
     {"util",       "estimatefee",           estimatefee,           true, {"nblocks"}},
-    {"util",       "estimatepriority",      estimatepriority,      true, {"nblocks"}},
-    {"util",       "estimatesmartfee",      estimatesmartfee,      true, {"nblocks"}},
-    {"util",       "estimatesmartpriority", estimatesmartpriority, true, {"nblocks"}},
 };
 // clang-format on
 

@@ -235,7 +235,7 @@ static bool rest_block(const Config &config, HTTPRequest *req,
         }
 
         pblockindex = mapBlockIndex[hash];
-        if (fHavePruned && !(pblockindex->nStatus & BLOCK_HAVE_DATA) &&
+        if (fHavePruned && !pblockindex->nStatus.hasData() &&
             pblockindex->nTx > 0) {
             return RESTERR(req, HTTP_NOT_FOUND,
                            hashStr + " not available (pruned data)");
@@ -398,9 +398,11 @@ static bool rest_tx(Config &config, HTTPRequest *req,
         return RESTERR(req, HTTP_BAD_REQUEST, "Invalid hash: " + hashStr);
     }
 
+    const TxId txid(hash);
+
     CTransactionRef tx;
     uint256 hashBlock = uint256();
-    if (!GetTransaction(config, hash, tx, hashBlock, true)) {
+    if (!GetTransaction(config, txid, tx, hashBlock, true)) {
         return RESTERR(req, HTTP_NOT_FOUND, hashStr + " not found");
     }
 

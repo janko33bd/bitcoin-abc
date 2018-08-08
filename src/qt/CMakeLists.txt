@@ -5,7 +5,9 @@ project(bitcoin-qt)
 # This ensure that AUTOMOC doesn't run on generated files.
 cmake_policy(SET CMP0071 OLD)
 
-find_package(Qt5 COMPONENTS Widgets Network REQUIRED)
+include(BrewHelper)
+find_brew_prefix(QT5_PREFIX qt5)
+find_package(Qt5 COMPONENTS Widgets Network REQUIRED HINTS "${QT5_PREFIX}")
 
 # Localisation
 add_subdirectory(locale)
@@ -112,6 +114,8 @@ target_include_directories(bitcoin-qt-base
 		${CMAKE_CURRENT_BINARY_DIR}
 		${CMAKE_CURRENT_BINARY_DIR}/forms
 		${Protobuf_INCLUDE_DIRS}
+	PRIVATE
+		${OPENSSL_INCLUDE_DIR}
 )
 
 target_link_libraries(bitcoin-qt-base
@@ -121,6 +125,10 @@ target_link_libraries(bitcoin-qt-base
 	Qt5::Network
 	${Protobuf_LIBRARIES}
 )
+
+if(${CMAKE_SYSTEM_NAME} MATCHES "Darwin")
+	set_property(TARGET bitcoin-qt-base PROPERTY AUTOMOC_MOC_OPTIONS "-DQ_OS_MAC")
+endif()
 
 # Wallet
 if(BUILD_BITCOIN_WALLET)
@@ -157,6 +165,9 @@ if(BUILD_BITCOIN_WALLET)
 	target_link_libraries(bitcoin-qt-base wallet)
 
 	# Dependencies
+	# Support Brew OpenSSL on MacOS X
+	include(BrewHelper)
+	find_brew_prefix(OPENSSL_ROOT_DIR openssl)
 	find_package(OpenSSL REQUIRED)
 	target_link_libraries(bitcoin-qt-base ${OPENSSL_CRYPTO_LIBRARY})
 endif()

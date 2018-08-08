@@ -59,6 +59,8 @@ static const bool DEFAULT_WHITELISTRELAY = true;
 static const bool DEFAULT_WHITELISTFORCERELAY = true;
 /** Default for -minrelaytxfee, minimum relay fee for transactions */
 static const Amount DEFAULT_MIN_RELAY_TX_FEE(10000);
+/** Default for -excessutxocharge for transactions transactions */
+static const Amount DEFAULT_UTXO_FEE(0);
 //! -maxtxfee default
 static const Amount DEFAULT_TRANSACTION_MAXFEE(1 * COIN);
 //! Discourage users to set fees higher than this amount (in satoshis) per kB
@@ -213,11 +215,6 @@ extern size_t nCoinCacheUsage;
 extern int64_t nLastCoinStakeSearchInterval;
 
 /**
- * A fee rate smaller than this is considered zero fee (for relaying, mining and
- * transaction creation)
- */
-extern CFeeRate minRelayTxFee;
-/**
  * Absolute maximum transaction fee (in satoshis) used by wallet and mempool
  * (rejects high fee in sendrawtransaction)
  */
@@ -306,12 +303,13 @@ public:
  *
  * Call without cs_main held.
  *
+ * @param[in]   config  The global config.
  * @param[in]   pblock  The block we want to process.
  * @param[in]   fForceProcessing Process this block even if unrequested; used
  * for non-network block sources and whitelisted peers.
  * @param[out]  fNewBlock A boolean which is set to indicate if the block was
- * first received via this call
- * @return true if the block is accepted as a valid block
+ *                        first received via this call.
+ * @return True if the block is accepted as a valid block.
  */
 bool ProcessNewBlock(const Config &config,
                      const std::shared_ptr<const CBlock> pblock,
@@ -322,41 +320,73 @@ bool ProcessNewBlock(const Config &config,
  *
  * Call without cs_main held.
  *
- * @param[in]  block The block headers themselves
- * @param[out] state This may be set to an Error state if any error occurred
- * processing them
- * @param[in]  chainparams The params for the chain we want to connect to
+ * @param[in]  config  The global config.
+ * @param[in]  block   The block headers themselves.
+ * @param[out] state   This may be set to an Error state if any error occurred
+ *                     processing them.
  * @param[out] ppindex If set, the pointer will be set to point to the last new
- * block index object for the given headers
+ *                     block index object for the given headers.
+ * @return True if block headers were accepted as valid.
  */
 bool ProcessNewBlockHeaders(const Config &config,
                             const std::vector<CBlockHeader> &block,
                             CValidationState &state,
                             const CBlockIndex **ppindex = nullptr);
 
-/** Check whether enough disk space is available for an incoming block */
+/**
+ * Check whether enough disk space is available for an incoming block.
+ */
 bool CheckDiskSpace(uint64_t nAdditionalBytes = 0);
-/** Open a block file (blk?????.dat) */
+
+/**
+ * Open a block file (blk?????.dat).
+ */
 FILE *OpenBlockFile(const CDiskBlockPos &pos, bool fReadOnly = false);
-/** Translation to a filesystem path */
+
+/**
+ * Translation to a filesystem path.
+ */
 fs::path GetBlockPosFilename(const CDiskBlockPos &pos, const char *prefix);
-/** Import blocks from an external file */
+
+/**
+ * Import blocks from an external file.
+ */
 bool LoadExternalBlockFile(const Config &config, FILE *fileIn,
                            CDiskBlockPos *dbp = nullptr);
-/** Initialize a new block tree database + block data on disk */
+
+/**
+ * Initialize a new block tree database + block data on disk.
+ */
 bool InitBlockIndex(const Config &config);
-/** Load the block tree and coins database from disk */
+
+/**
+ * Load the block tree and coins database from disk.
+ */
 bool LoadBlockIndex(const CChainParams &chainparams);
-/** Update the chain tip based on database information. */
+
+/**
+ * Update the chain tip based on database information.
+ */
 void LoadChainTip(const CChainParams &chainparams);
-/** Unload database information */
+
+/**
+ * Unload database information.
+ */
 void UnloadBlockIndex();
-/** Run an instance of the script checking thread */
+
+/**
+ * Run an instance of the script checking thread.
+ */
 void ThreadScriptCheck();
-/** Check whether we are doing an initial block download (synchronizing from
- * disk or network) */
+
+/**
+ * Check whether we are doing an initial block download (synchronizing from disk
+ * or network)
+ */
 bool IsInitialBlockDownload();
-/** Format a string that describes several potential problems detected by the
+
+/**
+ * Format a string that describes several potential problems detected by the
  * core.
  * strFor can have three values:
  * - "rpc": get critical warnings, which should put the client in safe mode if
@@ -367,10 +397,13 @@ bool IsInitialBlockDownload();
  * by strFor.
  */
 std::string GetWarnings(const std::string &strFor);
-/** Retrieve a transaction (from memory pool, or from disk, if possible) */
-bool GetTransaction(const Config &config, const uint256 &hash,
-                    CTransactionRef &tx, uint256 &hashBlock,
-                    bool fAllowSlow = false);
+
+/**
+ * Retrieve a transaction (from memory pool, or from disk, if possible).
+ */
+bool GetTransaction(const Config &config, const TxId &txid, CTransactionRef &tx,
+                    uint256 &hashBlock, bool fAllowSlow = false);
+
 /**
  * Find the best known block, and make it the active tip of the block chain.
  * If it fails, the tip is not updated.
@@ -386,17 +419,19 @@ bool ActivateBestChain(
 Amount GetProofOfWorkSubsidy(int nHeight, const Consensus::Params &consensusParams);
 Amount GetProofOfStakeSubsidy();
 
-/** Guess verification progress (as a fraction between 0.0=genesis and
- * 1.0=current tip). */
+/**
+ * Guess verification progress (as a fraction between 0.0=genesis and
+ * 1.0=current tip).
+ */
 double GuessVerificationProgress(const ChainTxData &data, CBlockIndex *pindex);
 
 /**
- *  Mark one block file as pruned.
+ * Mark one block file as pruned.
  */
 void PruneOneBlockFile(const int fileNumber);
 
 /**
- *  Actually unlink the specified files
+ * Actually unlink the specified files
  */
 void UnlinkPrunedFiles(const std::set<int> &setFilesToPrune);
 

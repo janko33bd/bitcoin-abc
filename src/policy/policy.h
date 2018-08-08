@@ -34,15 +34,9 @@ static const unsigned int MAX_STANDARD_TX_SIGOPS = MAX_TX_SIGOPS_COUNT / 5;
 static const unsigned int DEFAULT_MAX_MEMPOOL_SIZE = 300;
 /** Default for -incrementalrelayfee, which sets the minimum feerate increase
  * for mempool limiting or BIP 125 replacement **/
-static const Amount DEFAULT_INCREMENTAL_RELAY_FEE(1000);
+static const CFeeRate MEMPOOL_FULL_FEE_INCREMENT(Amount(1000));
 /** Default for -bytespersigop */
 static const unsigned int DEFAULT_BYTES_PER_SIGOP = 20;
-/** The maximum number of witness stack items in a standard P2WSH script */
-static const unsigned int MAX_STANDARD_P2WSH_STACK_ITEMS = 100;
-/** The maximum size of each witness stack item in a standard P2WSH script */
-static const unsigned int MAX_STANDARD_P2WSH_STACK_ITEM_SIZE = 80;
-/** The maximum size of a standard witnessScript */
-static const unsigned int MAX_STANDARD_P2WSH_SCRIPT_SIZE = 3600;
 /**
  * Min feerate for defining dust. Historically this has been the same as the
  * minRelayTxFee, however changing the dust limit changes which transactions are
@@ -71,16 +65,14 @@ static const unsigned int STANDARD_NOT_MANDATORY_VERIFY_FLAGS =
  * non-consensus code. */
 static const unsigned int STANDARD_LOCKTIME_VERIFY_FLAGS = 0;
 
-bool IsStandard(const CScript &scriptPubKey, txnouttype &whichType,
-                bool allowLargeOpReturn = true);
+bool IsStandard(const CScript &scriptPubKey, txnouttype &whichType);
 
 /**
  * Check for standard transaction types
  * @return True if all outputs (scriptPubKeys) use only standard transaction
  * forms
  */
-bool IsStandardTx(const CTransaction &tx, std::string &reason,
-                  bool allowLargeOpReturn = true);
+bool IsStandardTx(const CTransaction &tx, std::string &reason);
 
 /**
  * Check for standard transaction types

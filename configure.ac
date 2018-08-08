@@ -8,7 +8,7 @@ define(_CLIENT_VERSION_IS_RELEASE, true)
 define(_COPYRIGHT_YEAR, 2018)
 define(_COPYRIGHT_HOLDERS,[The %s developers])
 define(_COPYRIGHT_HOLDERS_SUBSTITUTION,[[Blackcoin More]])
-AC_INIT([Blackcoin More],[_CLIENT_VERSION_MAJOR._CLIENT_VERSION_MINOR._CLIENT_VERSION_REVISION],[https://github.com/janko33bd/bitcoin-abc/issues],[blackcoin-more],[http://blackcoin.org/])
+AC_INIT([Blackcoin More],[_CLIENT_VERSION_MAJOR._CLIENT_VERSION_MINOR._CLIENT_VERSION_REVISION],[https://gitlab.com/blackcoin/blackcoin-more],[blackcoin-more],[http://blackcoin.org/])
 AC_CONFIG_SRCDIR([src/validation.cpp])
 AC_CONFIG_HEADERS([src/config/bitcoin-config.h])
 AC_CONFIG_AUX_DIR([build-aux])
@@ -256,6 +256,8 @@ if test "x$enable_asan" = xyes; then
   if test "x$asan_failed" = xyes; then
     AC_MSG_ERROR("ASAN is not supported")
   fi
+  # fix linkage in MacOs
+  [LIBTOOL_APP_LDFLAGS="$LIBTOOL_APP_LDFLAGS -fsanitize=address"],
 fi
 
 if test "x$enable_tsan" = xyes; then
@@ -1327,7 +1329,7 @@ if test x$need_bundled_univalue = xyes; then
   AC_CONFIG_SUBDIRS([src/univalue])
 fi
 
-ac_configure_args="${ac_configure_args} --disable-shared --with-pic --with-bignum=no --enable-module-recovery --disable-jni"
+ac_configure_args="${ac_configure_args} --disable-shared --with-pic --with-bignum=no --enable-module-recovery --enable-module-multiset --disable-jni"
 AC_CONFIG_SUBDIRS([src/secp256k1])
 
 AC_OUTPUT

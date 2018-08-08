@@ -221,7 +221,7 @@ public:
      * Create new BlockPolicyEstimator and initialize stats tracking classes
      * with default values.
      */
-    CBlockPolicyEstimator(const CFeeRate &minRelayFee);
+    CBlockPolicyEstimator();
 
     /** Process all the transactions that have been included in a block */
     void processBlock(unsigned int nBlockHeight,
@@ -248,23 +248,6 @@ public:
     CFeeRate estimateSmartFee(int confTarget, int *answerFoundAtTarget,
                               const CTxMemPool &pool);
 
-    /**
-     * Return a priority estimate.
-     * DEPRECATED
-     * Returns -1
-     */
-    double estimatePriority(int confTarget);
-
-    /**
-     * Estimate priority needed to get be included in a block within confTarget
-     * blocks.
-     * DEPRECATED
-     * Returns -1 unless mempool is currently limited then returns INF_PRIORITY
-     * answerFoundAtTarget is set to confTarget
-     */
-    double estimateSmartPriority(int confTarget, int *answerFoundAtTarget,
-                                 const CTxMemPool &pool);
-
     /** Write estimation data to a file */
     void Write(CAutoFile &fileout);
 
@@ -273,7 +256,6 @@ public:
 
 private:
     //!< Passed to constructor to avoid dependency on main
-    CFeeRate minTrackedFee;
     unsigned int nBestSeenHeight;
     struct TxStatsInfo {
         unsigned int blockHeight;

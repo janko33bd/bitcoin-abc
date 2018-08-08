@@ -34,14 +34,12 @@ static CBlock BuildBlockTestCase() {
     block.hashPrevBlock = InsecureRand256();
     block.nBits = 0x207fffff;
 
-    tx.vin[0].prevout.hash = InsecureRand256();
-    tx.vin[0].prevout.n = 0;
+    tx.vin[0].prevout = COutPoint(InsecureRand256(), 0);
     block.vtx[1] = MakeTransactionRef(tx);
 
     tx.vin.resize(10);
     for (size_t i = 0; i < tx.vin.size(); i++) {
-        tx.vin[i].prevout.hash = InsecureRand256();
-        tx.vin[i].prevout.n = 0;
+        tx.vin[i].prevout = COutPoint(InsecureRand256(), 0);
     }
     block.vtx[2] = MakeTransactionRef(tx);
 
@@ -62,7 +60,7 @@ static CBlock BuildBlockTestCase() {
 #define SHARED_TX_OFFSET 2
 
 BOOST_AUTO_TEST_CASE(SimpleRoundTripTest) {
-    CTxMemPool pool(CFeeRate(Amount(0)));
+    CTxMemPool pool;
     TestMemPoolEntryHelper entry;
     CBlock block(BuildBlockTestCase());
 
@@ -172,7 +170,7 @@ public:
 };
 
 BOOST_AUTO_TEST_CASE(NonCoinbasePreforwardRTTest) {
-    CTxMemPool pool(CFeeRate(Amount(0)));
+    CTxMemPool pool;
     TestMemPoolEntryHelper entry;
     CBlock block(BuildBlockTestCase());
 
@@ -253,7 +251,7 @@ BOOST_AUTO_TEST_CASE(NonCoinbasePreforwardRTTest) {
 }
 
 BOOST_AUTO_TEST_CASE(SufficientPreforwardRTTest) {
-    CTxMemPool pool(CFeeRate(Amount(0)));
+    CTxMemPool pool;
     TestMemPoolEntryHelper entry;
     CBlock block(BuildBlockTestCase());
 
@@ -314,7 +312,7 @@ BOOST_AUTO_TEST_CASE(SufficientPreforwardRTTest) {
 }
 
 BOOST_AUTO_TEST_CASE(EmptyBlockRoundTripTest) {
-    CTxMemPool pool(CFeeRate(Amount(0)));
+    CTxMemPool pool;
     CMutableTransaction coinbase;
     coinbase.vin.resize(1);
     coinbase.vin[0].scriptSig.resize(10);

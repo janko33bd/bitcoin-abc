@@ -18,6 +18,7 @@ static const int SERIALIZE_TRANSACTION = 0x00;
  * differentiated for type safety.
  */
 struct TxId : public uint256 {
+    TxId() {}
     explicit TxId(const uint256 &b) : uint256(b) {}
 };
 
@@ -33,37 +34,36 @@ struct TxHash : public uint256 {
  * vout.
  */
 class COutPoint {
-public:
-    uint256 hash;
+private:
+    TxId txid;
     uint32_t n;
+    uint256 hash;
 
-    COutPoint() { SetNull(); }
-    COutPoint(uint256 hashIn, uint32_t nIn) {
-        hash = hashIn;
-        n = nIn;
-    }
+public:
+    COutPoint() : txid(), n(-1) {}
+    COutPoint(uint256 txidIn, uint32_t nIn) : txid(TxId(txidIn)), n(nIn) {}
 
     ADD_SERIALIZE_METHODS;
 
     template <typename Stream, typename Operation>
     inline void SerializationOp(Stream &s, Operation ser_action) {
-        READWRITE(hash);
+        READWRITE(txid);
         READWRITE(n);
     }
 
-    void SetNull() {
-        hash.SetNull();
-        n = (uint32_t)-1;
-    }
-    bool IsNull() const { return (hash.IsNull() && n == (uint32_t)-1); }
+    bool IsNull() const { return txid.IsNull() && n == uint32_t(-1); }
+
+    const TxId &GetTxId() const { return txid; }
+    uint32_t GetN() const { return n; }
+    uint256 GetHash() const { return hash; } 
 
     friend bool operator<(const COutPoint &a, const COutPoint &b) {
-        int cmp = a.hash.Compare(b.hash);
+        int cmp = a.txid.Compare(b.txid);
         return cmp < 0 || (cmp == 0 && a.n < b.n);
     }
 
     friend bool operator==(const COutPoint &a, const COutPoint &b) {
-        return (a.hash == b.hash && a.n == b.n);
+        return (a.txid == b.txid && a.n == b.n);
     }
 
     friend bool operator!=(const COutPoint &a, const COutPoint &b) {
@@ -123,9 +123,11 @@ public:
     CTxIn() { nSequence = SEQUENCE_FINAL; }
 
     explicit CTxIn(COutPoint prevoutIn, CScript scriptSigIn = CScript(),
-                   uint32_t nSequenceIn = SEQUENCE_FINAL);
-    CTxIn(uint256 hashPrevTx, uint32_t nOut, CScript scriptSigIn = CScript(),
-          uint32_t nSequenceIn = SEQUENCE_FINAL);
+                   uint32_t nSequenceIn = SEQUENCE_FINAL)
+        : prevout(prevoutIn), scriptSig(scriptSigIn), nSequence(nSequenceIn) {}
+    CTxIn(TxId prevTxId, uint32_t nOut, CScript scriptSigIn = CScript(),
+          uint32_t nSequenceIn = SEQUENCE_FINAL)
+        : CTxIn(COutPoint(prevTxId, nOut), scriptSigIn, nSequenceIn) {}
 
     ADD_SERIALIZE_METHODS;
 
@@ -157,7 +159,8 @@ public:
 
     CTxOut() { SetNull(); }
 
-    CTxOut(const Amount &nValueIn, CScript scriptPubKeyIn);
+    CTxOut(Amount nValueIn, CScript scriptPubKeyIn)
+        : nValue(nValueIn), scriptPubKey(scriptPubKeyIn) {}
 
     ADD_SERIALIZE_METHODS;
 

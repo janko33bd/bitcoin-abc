@@ -6,6 +6,7 @@
 #include "data/tx_valid.json.h"
 #include "test/test_bitcoin.h"
 
+#include "checkqueue.h"
 #include "clientversion.h"
 #include "consensus/validation.h"
 #include "core_io.h"
@@ -16,6 +17,7 @@
 #include "script/script_error.h"
 #include "script/sign.h"
 #include "script/standard.h"
+#include "test/jsonutil.h"
 #include "test/scriptflags.h"
 #include "utilstrencodings.h"
 #include "validation.h" // For CheckRegularTransaction
@@ -29,9 +31,6 @@
 #include <univalue.h>
 
 typedef std::vector<uint8_t> valtype;
-
-// In script_tests.cpp
-extern UniValue read_json(const std::string &jsondata);
 
 BOOST_FIXTURE_TEST_SUITE(transaction_tests, BasicTestingSetup)
 
@@ -301,15 +300,12 @@ BOOST_AUTO_TEST_CASE(test_Get) {
 
     CMutableTransaction t1;
     t1.vin.resize(3);
-    t1.vin[0].prevout.hash = dummyTransactions[0].GetId();
-    t1.vin[0].prevout.n = 1;
+    t1.vin[0].prevout = COutPoint(dummyTransactions[0].GetId(), 1);
     t1.vin[0].scriptSig << std::vector<uint8_t>(65, 0);
-    t1.vin[1].prevout.hash = dummyTransactions[1].GetId();
-    t1.vin[1].prevout.n = 0;
+    t1.vin[1].prevout = COutPoint(dummyTransactions[1].GetId(), 0);
     t1.vin[1].scriptSig << std::vector<uint8_t>(65, 0)
                         << std::vector<uint8_t>(33, 4);
-    t1.vin[2].prevout.hash = dummyTransactions[1].GetId();
-    t1.vin[2].prevout.n = 1;
+    t1.vin[2].prevout = COutPoint(dummyTransactions[1].GetId(), 1);
     t1.vin[2].scriptSig << std::vector<uint8_t>(65, 0)
                         << std::vector<uint8_t>(33, 4);
     t1.vout.resize(2);
@@ -327,7 +323,7 @@ void CreateCreditAndSpend(const CKeyStore &keystore, const CScript &outscript,
     CMutableTransaction outputm;
     outputm.nVersion = 1;
     outputm.vin.resize(1);
-    outputm.vin[0].prevout.SetNull();
+    outputm.vin[0].prevout = COutPoint();
     outputm.vin[0].scriptSig = CScript();
     outputm.vout.resize(1);
     outputm.vout[0].nValue = Amount(1);
@@ -343,8 +339,7 @@ void CreateCreditAndSpend(const CKeyStore &keystore, const CScript &outscript,
     CMutableTransaction inputm;
     inputm.nVersion = 1;
     inputm.vin.resize(1);
-    inputm.vin[0].prevout.hash = output->GetId();
-    inputm.vin[0].prevout.n = 0;
+    inputm.vin[0].prevout = COutPoint(output->GetId(), 0);
     inputm.vout.resize(1);
     inputm.vout[0].nValue = Amount(1);
     inputm.vout[0].scriptPubKey = CScript();
@@ -393,6 +388,88 @@ void ReplaceRedeemScript(CScript &script, const CScript &redeemScript) {
     stack.back() =
         std::vector<uint8_t>(redeemScript.begin(), redeemScript.end());
     script = PushAll(stack);
+}
+
+BOOST_AUTO_TEST_CASE(test_big_transaction) {
+    CKey key;
+    key.MakeNewKey(false);
+    CBasicKeyStore keystore;
+    keystore.AddKeyPubKey(key, key.GetPubKey());
+    CScript scriptPubKey = CScript()
+                           << ToByteVector(key.GetPubKey()) << OP_CHECKSIG;
+
+    std::vector<SigHashType> sigHashes;
+    sigHashes.emplace_back(SIGHASH_NONE);
+    sigHashes.emplace_back(SIGHASH_SINGLE);
+    sigHashes.emplace_back(SIGHASH_ALL);
+    sigHashes.emplace_back(SIGHASH_NONE | SIGHASH_ANYONECANPAY);
+    sigHashes.emplace_back(SIGHASH_SINGLE | SIGHASH_ANYONECANPAY);
+    sigHashes.emplace_back(SIGHASH_ALL | SIGHASH_ANYONECANPAY);
+
+    CMutableTransaction mtx;
+    mtx.nVersion = 1;
+
+    // create a big transaction of 4500 inputs signed by the same key.
+    const static size_t OUTPUT_COUNT = 4500;
+    mtx.vout.reserve(OUTPUT_COUNT);
+
+    for (size_t ij = 0; ij < OUTPUT_COUNT; ij++) {
+        size_t i = mtx.vin.size();
+        uint256 prevId = uint256S(
+            "0000000000000000000000000000000000000000000000000000000000000100");
+        COutPoint outpoint(prevId, i);
+
+        mtx.vin.resize(mtx.vin.size() + 1);
+        mtx.vin[i].prevout = outpoint;
+        mtx.vin[i].scriptSig = CScript();
+
+        mtx.vout.emplace_back(Amount(1000), CScript() << OP_1);
+    }
+
+    // sign all inputs
+    for (size_t i = 0; i < mtx.vin.size(); i++) {
+        bool hashSigned =
+            SignSignature(keystore, scriptPubKey, mtx, i, Amount(1000),
+                          sigHashes.at(i % sigHashes.size()));
+        BOOST_CHECK_MESSAGE(hashSigned, "Failed to sign test transaction");
+    }
+
+    CTransaction tx(mtx);
+
+    // check all inputs concurrently, with the cache
+    PrecomputedTransactionData txdata(tx);
+    boost::thread_group threadGroup;
+    CCheckQueue<CScriptCheck> scriptcheckqueue(128);
+    CCheckQueueControl<CScriptCheck> control(&scriptcheckqueue);
+
+    for (int i = 0; i < 20; i++) {
+        threadGroup.create_thread(boost::bind(
+            &CCheckQueue<CScriptCheck>::Thread, boost::ref(scriptcheckqueue)));
+    }
+
+    std::vector<Coin> coins;
+    for (size_t i = 0; i < mtx.vin.size(); i++) {
+        CTxOut out;
+        out.nValue = Amount(1000);
+        out.scriptPubKey = scriptPubKey;
+        coins.emplace_back(std::move(out), 1, 0, false, false);
+    }
+
+    for (size_t i = 0; i < mtx.vin.size(); i++) {
+        std::vector<CScriptCheck> vChecks;
+        CTxOut &out = coins[tx.vin[i].prevout.GetN()].GetTxOut();
+        CScriptCheck check(out.scriptPubKey, out.nValue, tx, i,
+                           MANDATORY_SCRIPT_VERIFY_FLAGS, false, txdata);
+        vChecks.push_back(CScriptCheck());
+        check.swap(vChecks.back());
+        control.Add(vChecks);
+    }
+
+    bool controlCheck = control.Wait();
+    BOOST_CHECK(controlCheck);
+
+    threadGroup.interrupt_all();
+    threadGroup.join_all();
 }
 
 BOOST_AUTO_TEST_CASE(test_witness) {
@@ -531,8 +608,7 @@ BOOST_AUTO_TEST_CASE(test_IsStandard) {
 
     CMutableTransaction t;
     t.vin.resize(1);
-    t.vin[0].prevout.hash = dummyTransactions[0].GetId();
-    t.vin[0].prevout.n = 1;
+    t.vin[0].prevout = COutPoint(dummyTransactions[0].GetId(), 1);
     t.vin[0].scriptSig << std::vector<uint8_t>(65, 0);
     t.vout.resize(1);
     t.vout[0].nValue = 90 * CENT;
@@ -570,30 +646,6 @@ BOOST_AUTO_TEST_CASE(test_IsStandard) {
     // MAX_OP_RETURN_RELAY-byte TX_NULL_DATA (standard)
     t.vout[0].scriptPubKey =
         CScript() << OP_RETURN
-                  << ParseHex("04678afdb0fe5548271967f1a67130b7105cd6a828e03909"
-                              "a67962e0ea1f61deb649f6bc3f4cef3804678afdb0fe5548"
-                              "271967f1a67130b7105cd6a828e03909a67962e0ea1f61de"
-                              "b649f6bc3f4cef38");
-    BOOST_CHECK_EQUAL(MAX_OP_RETURN_RELAY, t.vout[0].scriptPubKey.size());
-    BOOST_CHECK(IsStandardTx(CTransaction(t), reason));
-
-    // MAX_OP_RETURN_RELAY+1-byte TX_NULL_DATA (non-standard)
-    t.vout[0].scriptPubKey =
-        CScript() << OP_RETURN
-                  << ParseHex("04678afdb0fe5548271967f1a67130b7105cd6a828e03909"
-                              "a67962e0ea1f61deb649f6bc3f4cef3804678afdb0fe5548"
-                              "271967f1a67130b7105cd6a828e03909a67962e0ea1f61de"
-                              "b649f6bc3f4cef3800");
-    BOOST_CHECK_EQUAL(MAX_OP_RETURN_RELAY + 1, t.vout[0].scriptPubKey.size());
-    BOOST_CHECK(!IsStandardTx(CTransaction(t), reason));
-
-    /**
-     * Check acceptance of larger op_return when asked to.
-     */
-
-    // New default size of 223 byte is standard
-    t.vout[0].scriptPubKey =
-        CScript() << OP_RETURN
                   << ParseHex("646578784062697477617463682e636f2092c558ed52c56d"
                               "8dd14ca76226bc936a84820d898443873eb03d8854b21fa3"
                               "952b99a2981873e74509281730d78a21786d34a38bd1ebab"
@@ -604,10 +656,10 @@ BOOST_AUTO_TEST_CASE(test_IsStandard) {
                               "732ba6677520a893d75d9a966cb8f85dc301656b1635c631"
                               "f5d00d4adf73f2dd112ca75cf19754651909becfbe65aed1"
                               "3afb2ab8");
-    BOOST_CHECK_EQUAL(MAX_OP_RETURN_RELAY_LARGE, t.vout[0].scriptPubKey.size());
-    BOOST_CHECK(IsStandardTx(CTransaction(t), reason, true));
+    BOOST_CHECK_EQUAL(MAX_OP_RETURN_RELAY, t.vout[0].scriptPubKey.size());
+    BOOST_CHECK(IsStandardTx(CTransaction(t), reason));
 
-    // Larger than default size of 223 byte is non-standard
+    // MAX_OP_RETURN_RELAY+1-byte TX_NULL_DATA (non-standard)
     t.vout[0].scriptPubKey =
         CScript() << OP_RETURN
                   << ParseHex("646578784062697477617463682e636f2092c558ed52c56d"
@@ -620,14 +672,13 @@ BOOST_AUTO_TEST_CASE(test_IsStandard) {
                               "732ba6677520a893d75d9a966cb8f85dc301656b1635c631"
                               "f5d00d4adf73f2dd112ca75cf19754651909becfbe65aed1"
                               "3afb2ab800");
-    BOOST_CHECK_EQUAL(MAX_OP_RETURN_RELAY_LARGE + 1,
-                      t.vout[0].scriptPubKey.size());
-    BOOST_CHECK(!IsStandardTx(CTransaction(t), reason, true));
+    BOOST_CHECK_EQUAL(MAX_OP_RETURN_RELAY + 1, t.vout[0].scriptPubKey.size());
+    BOOST_CHECK(!IsStandardTx(CTransaction(t), reason));
 
     /**
      * Check when a custom value is used for -datacarriersize .
      */
-    unsigned newMaxSize = MAX_OP_RETURN_RELAY + 7;
+    unsigned newMaxSize = 90;
     gArgs.ForceSetArg("-datacarriersize", std::to_string(newMaxSize));
 
     // Max user provided payload size is standard
@@ -638,8 +689,7 @@ BOOST_AUTO_TEST_CASE(test_IsStandard) {
                               "271967f1a67130b7105cd6a828e03909a67962e0ea1f61de"
                               "b649f6bc3f4cef3877696e64657878");
     BOOST_CHECK_EQUAL(t.vout[0].scriptPubKey.size(), newMaxSize);
-    BOOST_CHECK(IsStandardTx(CTransaction(t), reason, false));
-    BOOST_CHECK(IsStandardTx(CTransaction(t), reason, true));
+    BOOST_CHECK(IsStandardTx(CTransaction(t), reason));
 
     // Max user provided payload size + 1 is non-standard
     t.vout[0].scriptPubKey =
@@ -649,8 +699,7 @@ BOOST_AUTO_TEST_CASE(test_IsStandard) {
                               "271967f1a67130b7105cd6a828e03909a67962e0ea1f61de"
                               "b649f6bc3f4cef3877696e6465787800");
     BOOST_CHECK_EQUAL(t.vout[0].scriptPubKey.size(), newMaxSize + 1);
-    BOOST_CHECK(!IsStandardTx(CTransaction(t), reason, false));
-    BOOST_CHECK(!IsStandardTx(CTransaction(t), reason, true));
+    BOOST_CHECK(!IsStandardTx(CTransaction(t), reason));
 
     // Clear custom confirguration.
     gArgs.ClearArg("-datacarriersize");

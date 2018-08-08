@@ -463,8 +463,8 @@ void entryToJSON(UniValue &info, const CTxMemPoolEntry &e) {
     const CTransaction &tx = e.GetTx();
     std::set<std::string> setDepends;
     for (const CTxIn &txin : tx.vin) {
-        if (mempool.exists(txin.prevout.hash)) {
-            setDepends.insert(txin.prevout.hash.ToString());
+        if (mempool.exists(txin.prevout.GetTxId())) {
+            setDepends.insert(txin.prevout.GetTxId().ToString());
         }
     }
 
@@ -871,7 +871,7 @@ UniValue getblock(const Config &config, const JSONRPCRequest &request) {
     CBlock block;
     CBlockIndex *pblockindex = mapBlockIndex[hash];
 
-    if (fHavePruned && !(pblockindex->nStatus & BLOCK_HAVE_DATA) &&
+    if (fHavePruned && !pblockindex->nStatus.hasData() &&
         pblockindex->nTx > 0) {
         throw JSONRPCError(RPC_MISC_ERROR, "Block not available (pruned data)");
     }
@@ -949,12 +949,12 @@ static bool GetUTXOStats(CCoinsView *view, CCoinsStats &stats) {
         COutPoint key;
         Coin coin;
         if (pcursor->GetKey(key) && pcursor->GetValue(coin)) {
-            if (!outputs.empty() && key.hash != prevkey) {
+            if (!outputs.empty() && key.GetTxId() != prevkey) {
                 ApplyStats(stats, ss, prevkey, outputs);
                 outputs.clear();
             }
-            prevkey = key.hash;
-            outputs[key.n] = std::move(coin);
+            prevkey = key.GetTxId();
+            outputs[key.GetN()] = std::move(coin);
         } else {
             return error("%s: unable to read value", __func__);
         }
@@ -1369,8 +1369,7 @@ UniValue getblockchaininfo(const Config &config,
 
     if (fPruneMode) {
         CBlockIndex *block = chainActive.Tip();
-        while (block && block->pprev &&
-               (block->pprev->nStatus & BLOCK_HAVE_DATA)) {
+        while (block && block->pprev && block->pprev->nStatus.hasData()) {
             block = block->pprev;
         }
 
@@ -1480,19 +1479,19 @@ UniValue getchaintips(const Config &config, const JSONRPCRequest &request) {
         if (chainActive.Contains(block)) {
             // This block is part of the currently active chain.
             status = "active";
-        } else if (block->nStatus & BLOCK_FAILED_MASK) {
+        } else if (block->nStatus.isInvalid()) {
             // This block or one of its ancestors is invalid.
             status = "invalid";
         } else if (block->nChainTx == 0) {
             // This block cannot be connected because full block data for it or
             // one of its parents is missing.
             status = "headers-only";
-        } else if (block->IsValid(BLOCK_VALID_SCRIPTS)) {
+        } else if (block->IsValid(BlockValidity::SCRIPTS)) {
             // This block is fully validated, but no longer part of the active
             // chain. It was probably the active block once, but was
             // reorganized.
             status = "valid-fork";
-        } else if (block->IsValid(BLOCK_VALID_TREE)) {
+        } else if (block->IsValid(BlockValidity::TREE)) {
             // The headers for this block are valid, but it has not been
             // validated. It was probably never part of the most-work chain.
             status = "valid-headers";

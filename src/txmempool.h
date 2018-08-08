@@ -561,7 +561,7 @@ public:
 
     /** Create a new CTxMemPool.
      */
-    CTxMemPool(const CFeeRate &_minReasonableRelayFee);
+    CTxMemPool();
     ~CTxMemPool();
 
     /**
@@ -708,8 +708,8 @@ public:
 
     bool exists(const COutPoint &outpoint) const {
         LOCK(cs);
-        auto it = mapTx.find(outpoint.hash);
-        return it != mapTx.end() && outpoint.n < it->GetTx().vout.size();
+        auto it = mapTx.find(outpoint.GetTxId());
+        return it != mapTx.end() && outpoint.GetN() < it->GetTx().vout.size();
     }
 
     CTransactionRef get(const uint256 &hash) const;
@@ -726,17 +726,6 @@ public:
 
     /** Estimate fee rate needed to get into the next nBlocks */
     CFeeRate estimateFee(int nBlocks) const;
-
-    /**
-     * Estimate priority needed to get into the next nBlocks. If no answer can
-     * be given at nBlocks, return an estimate at the lowest number of blocks
-     * where one can be given.
-     */
-    double estimateSmartPriority(int nBlocks,
-                                 int *answerFoundAtBlocks = nullptr) const;
-
-    /** Estimate priority needed to get into the next nBlocks */
-    double estimatePriority(int nBlocks) const;
 
     /** Write/Read estimates to disk */
     bool WriteFeeEstimates(CAutoFile &fileout) const;

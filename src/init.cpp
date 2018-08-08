@@ -282,7 +282,7 @@ void HandleSIGTERM(int) {
 }
 
 void HandleSIGHUP(int) {
-    fReopenDebugLog = true;
+    GetLogger().fReopenDebugLog = true;
 }
 
 static bool Bind(CConnman &connman, const CService &addr, unsigned int flags) {
@@ -653,6 +653,10 @@ std::string HelpMessage(HelpMessageMode mode) {
             strprintf("Run checks every <n> transactions (default: %u)",
                       defaultChainParams->DefaultConsistencyChecks()));
         strUsage += HelpMessageOpt(
+            "-checkpoints", strprintf("Only accept block chain matching "
+                                      "built-in checkpoints (default: %d)",
+                                      DEFAULT_CHECKPOINTS_ENABLED));
+        strUsage += HelpMessageOpt(
             "-disablesafemode", strprintf("Disable safemode, override a real "
                                           "safe mode event (default: %d)",
                                           DEFAULT_DISABLE_SAFEMODE));
@@ -762,6 +766,11 @@ std::string HelpMessage(HelpMessageMode mode) {
                       DEFAULT_MAX_TIP_AGE));
     }
     strUsage += HelpMessageOpt(
+        "-excessutxocharge=<amt>",
+        strprintf(_("Fees (in %s/kB) to charge per utxo created for"
+                    "relaying, and mining (default: %s)"),
+                  CURRENCY_UNIT, FormatMoney(DEFAULT_UTXO_FEE)));
+    strUsage += HelpMessageOpt(
         "-minrelaytxfee=<amt>",
         strprintf(
             _("Fees (in %s/kB) smaller than this are considered zero fee for "
@@ -802,12 +811,6 @@ std::string HelpMessage(HelpMessageMode mode) {
                                        "limit, in bytes (default: %d)"),
                                      DEFAULT_MAX_BLOCK_SIZE));
         strUsage += HelpMessageOpt(
-            "-incrementalrelayfee=<amt>",
-            strprintf(
-                "Fee rate (in %s/kB) used to define cost of relay, used for "
-                "mempool limiting and BIP 125 replacement. (default: %s)",
-                CURRENCY_UNIT, FormatMoney(DEFAULT_INCREMENTAL_RELAY_FEE)));
-        strUsage += HelpMessageOpt(
             "-dustrelayfee=<amt>",
             strprintf("Fee rate (in %s/kB) used to defined dust, the value of "
                       "an output such that it will cost about 1/3 of its value "
@@ -825,10 +828,9 @@ std::string HelpMessage(HelpMessageMode mode) {
                   DEFAULT_ACCEPT_DATACARRIER));
     strUsage += HelpMessageOpt(
         "-datacarriersize",
-        strprintf(
-            _("Maximum size of data in data carrier transactions we relay and "
-              "mine (pre-1.2.5 default: %u, post-1.2.5 default: %u)"),
-            MAX_OP_RETURN_RELAY, MAX_OP_RETURN_RELAY_LARGE));
+        strprintf(_("Maximum size of data in data carrier transactions we "
+                    "relay and mine (default: %u)"),
+                  MAX_OP_RETURN_RELAY));
 
     strUsage += HelpMessageGroup(_("Block creation options:"));
     strUsage += HelpMessageOpt(
@@ -893,6 +895,9 @@ std::string HelpMessage(HelpMessageMode mode) {
         strprintf(
             _("Set the number of threads to service RPC calls (default: %d)"),
             DEFAULT_HTTP_THREADS));
+    strUsage += HelpMessageOpt(
+        "-rpccorsdomain=value",
+        "Domain from which to accept cross origin requests (browser enforced)");
     if (showDebug) {
         strUsage += HelpMessageOpt(
             "-rpcworkqueue=<n>", strprintf("Set the depth of the work queue to "
@@ -909,8 +914,8 @@ std::string HelpMessage(HelpMessageMode mode) {
 
 std::string LicenseInfo() {
     const std::string URL_SOURCE_CODE =
-        "<https://github.com/janko33bd/bitcoin-abc>";
-    const std::string URL_WEBSITE = "<https://blackcoin.co>";
+        "<https://gitlab.com/blackcoin/blackcoin-more>";
+    const std::string URL_WEBSITE = "<https://blackcoin.org>";
 
     return CopyrightHolders(
                strprintf(_("Copyright (C) %i-%i"), 2009, COPYRIGHT_YEAR) +
@@ -1229,9 +1234,13 @@ static std::string ResolveErrMsg(const char *const optname,
 }
 
 void InitLogging() {
-    fPrintToConsole = gArgs.GetBoolArg("-printtoconsole", false);
-    fLogTimestamps = gArgs.GetBoolArg("-logtimestamps", DEFAULT_LOGTIMESTAMPS);
-    fLogTimeMicros = gArgs.GetBoolArg("-logtimemicros", DEFAULT_LOGTIMEMICROS);
+    BCLog::Logger &logger = GetLogger();
+    logger.fPrintToConsole = gArgs.GetBoolArg("-printtoconsole", false);
+    logger.fLogTimestamps =
+        gArgs.GetBoolArg("-logtimestamps", DEFAULT_LOGTIMESTAMPS);
+    logger.fLogTimeMicros =
+        gArgs.GetBoolArg("-logtimemicros", DEFAULT_LOGTIMEMICROS);
+
     fLogIPs = gArgs.GetBoolArg("-logips", DEFAULT_LOGIPS);
 
     LogPrintf("\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n");
@@ -1377,13 +1386,13 @@ bool AppInitParameterInteraction(Config &config) {
         if (find(categories.begin(), categories.end(), std::string("0")) ==
             categories.end()) {
             for (const auto &cat : categories) {
-                uint32_t flag = 0;
-                if (!GetLogCategory(&flag, &cat)) {
+                BCLog::LogFlags flag;
+                if (!GetLogCategory(flag, cat)) {
                     InitWarning(
                         strprintf(_("Unsupported logging category %s=%s."),
                                   "-debug", cat));
                 }
-                logCategories |= flag;
+                GetLogger().EnableCategory(flag);
             }
         }
     }
@@ -1391,12 +1400,12 @@ bool AppInitParameterInteraction(Config &config) {
     // Now remove the logging categories which were explicitly excluded
     if (gArgs.IsArgSet("-debugexclude")) {
         for (const std::string &cat : gArgs.GetArgs("-debugexclude")) {
-            uint32_t flag;
-            if (!GetLogCategory(&flag, &cat)) {
+            BCLog::LogFlags flag;
+            if (!GetLogCategory(flag, cat)) {
                 InitWarning(strprintf(_("Unsupported logging category %s=%s."),
                                       "-debugexclude", cat));
             }
-            logCategories &= ~flag;
+            GetLogger().DisableCategory(flag);
         }
     }
 
@@ -1477,17 +1486,6 @@ bool AppInitParameterInteraction(Config &config) {
     if (nMempoolSizeMax < 0 || nMempoolSizeMax < nMempoolSizeMin)
         return InitError(strprintf(_("-maxmempool must be at least %d MB"),
                                    std::ceil(nMempoolSizeMin / 1000000.0)));
-    // Incremental relay fee sets the minimimum feerate increase necessary for
-    // BIP 125 replacement in the mempool and the amount the mempool min fee
-    // increases above the feerate of txs evicted due to mempool limiting.
-    if (gArgs.IsArgSet("-incrementalrelayfee")) {
-        Amount n(0);
-        if (!ParseMoney(gArgs.GetArg("-incrementalrelayfee", ""), n))
-            return InitError(
-                AmountErrMsg("incrementalrelayfee",
-                             gArgs.GetArg("-incrementalrelayfee", "")));
-        incrementalRelayFee = CFeeRate(n);
-    }
 
     // -par=0 means autodetect, but nScriptCheckThreads==0 means no concurrency
     nScriptCheckThreads = gArgs.GetArg("-par", DEFAULT_SCRIPTCHECK_THREADS);
@@ -1552,6 +1550,18 @@ bool AppInitParameterInteraction(Config &config) {
     nConnectTimeout = gArgs.GetArg("-timeout", DEFAULT_CONNECT_TIMEOUT);
     if (nConnectTimeout <= 0) nConnectTimeout = DEFAULT_CONNECT_TIMEOUT;
 
+    // Obtain the amount to charge excess UTXO
+    if (gArgs.IsArgSet("-excessutxocharge")) {
+        Amount n(0);
+        auto parsed = ParseMoney(gArgs.GetArg("-excessutxocharge", ""), n);
+        if (!parsed || Amount(0) > n)
+            return InitError(AmountErrMsg(
+                "excessutxocharge", gArgs.GetArg("-excessutxocharge", "")));
+        config.SetExcessUTXOCharge(n);
+    } else {
+        config.SetExcessUTXOCharge(DEFAULT_UTXO_FEE);
+    }
+
     // Fee-per-kilobyte amount considered the same as "free". If you are mining,
     // be careful setting this: if you set it to zero then a transaction spammer
     // can cheaply fill blocks using 1-satoshi-fee transactions. It should be
@@ -1563,13 +1573,9 @@ bool AppInitParameterInteraction(Config &config) {
             return InitError(AmountErrMsg("minrelaytxfee",
                                           gArgs.GetArg("-minrelaytxfee", "")));
         // High fee check is done afterward in CWallet::ParameterInteraction()
-        ::minRelayTxFee = CFeeRate(n);
-    } else if (incrementalRelayFee > ::minRelayTxFee) {
-        // Allow only setting incrementalRelayFee to control both
-        ::minRelayTxFee = incrementalRelayFee;
-        LogPrintf(
-            "Increasing minrelaytxfee to %s to match incrementalrelayfee\n",
-            ::minRelayTxFee.ToString());
+        config.SetMinFeePerKB(CFeeRate(n));
+    } else {
+        config.SetMinFeePerKB(CFeeRate(DEFAULT_MIN_RELAY_TX_FEE));
     }
 
     // Sanity check argument for min fee for including tx in block
@@ -1735,17 +1741,21 @@ bool AppInitMain(Config &config, boost::thread_group &threadGroup,
 #ifndef WIN32
     CreatePidFile(GetPidFile(), getpid());
 #endif
-    if (gArgs.GetBoolArg("-shrinkdebugfile", logCategories != BCLog::NONE)) {
+
+    BCLog::Logger &logger = GetLogger();
+
+    bool default_shrinkdebugfile = logger.DefaultShrinkDebugFile();
+    if (gArgs.GetBoolArg("-shrinkdebugfile", default_shrinkdebugfile)) {
         // Do this first since it both loads a bunch of debug.log into memory,
         // and because this needs to happen before any other debug.log printing.
-        ShrinkDebugFile();
+        logger.ShrinkDebugFile();
     }
 
-    if (fPrintToDebugLog) {
-        OpenDebugLog();
+    if (logger.fPrintToDebugLog) {
+        logger.OpenDebugLog();
     }
 
-    if (!fLogTimestamps) {
+    if (!logger.fLogTimestamps) {
         LogPrintf("Startup time: %s\n",
                   DateTimeStrFormat("%Y-%m-%d %H:%M:%S", GetTime()));
     }

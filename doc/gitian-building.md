@@ -1,17 +1,17 @@
 Gitian building
 ================
 
-*Setup instructions for a Gitian build of Bitcoin Core using an Ubuntu VM or physical system.*
+*Setup instructions for a Gitian build of Bitcoin ABC using an Ubuntu VM or physical system.*
 
 Gitian is the deterministic build process that is used to build the Bitcoin
-Core executables. It provides a way to be reasonably sure that the
+ABC executables. It provides a way to be reasonably sure that the
 executables are really built from the source on GitHub. It also makes sure that
 the same, tested dependencies are used and statically built into the executable.
 
 Multiple developers build the source code by following a specific descriptor
 ("recipe"), cryptographically sign the result, and upload the resulting signature.
 These results are compared and only if they match, the build is accepted and uploaded
-to bitcoin.org.
+to bitcoinabc.org.
 
 More independent Gitian builders are needed, which is why this guide exists.
 It is preferred you follow these steps yourself instead of using someone else's
@@ -57,7 +57,7 @@ pushd
 cd /tmp/
 git clone https://github.com/boxcutter/ubuntu.git
 cd ubuntu
-git checkout 2e7a0d5631dadf7576c7c4d2f52856317031653b
+git checkout 1e1f4804315b27eba398de93b8024230d190443a
 packer build -var-file=ubuntu1604.json -only=virtualbox-iso ubuntu.json
 vagrant box add --name abc-xenial box/virtualbox/ubuntu1604-0.1.0.box
 popd
@@ -107,6 +107,12 @@ COMMIT=v0.16.0 # or whatever release tag you wish
 ./bin/gbuild --commit bitcoin=${COMMIT} --url bitcoin=${URL} /vagrant/contrib/gitian-descriptors/gitian-linux.yml
 ./bin/gbuild --commit bitcoin=${COMMIT} --url bitcoin=${URL} /vagrant/contrib/gitian-descriptors/gitian-win.yml
 ./bin/gbuild --commit bitcoin=${COMMIT} --url bitcoin=${URL} /vagrant/contrib/gitian-descriptors/gitian-osx.yml
+```
+
+Note: For executing gitian builds on local changes, change URL and COMMIT:
+```bash
+URL=/vagrant/
+COMMIT=<git-commit-hash> # replace <git-commit-hash> with your latest changes
 ```
 
 This may take some time as it will build all the dependencies needed for each
